@@ -96,7 +96,11 @@ def load(now: datetime) -> None:
         try:
             date, value = latest()
         except Exception as error:  # a source being down is data, not a crash
-            print(f"shadow: {name} fetch failed: {type(error).__name__}: {error}", file=sys.stderr)
+            reason = f"{type(error).__name__}: {error}"[:500]
+            # Recorded so the analysis can tell "the publisher was late" from "our loader
+            # could not reach it".
+            log(FAILURES, {"at": now.isoformat() + "Z", "step": f"fetch {name}", "error": reason})
+            print(f"shadow: {name} fetch failed: {reason}", file=sys.stderr)
             continue
         if append_if_new(LOADS / f"{name}.csv", header, date, value, now):
             print(f"shadow: loaded {name} {date}")
@@ -112,7 +116,15 @@ def check_and_record() -> int:
     try:
         report = json.loads(completed.stdout)
     except json.JSONDecodeError:
-        log(FAILURES, {"exit_code": completed.returncode, "stderr": completed.stderr[-2000:]})
+        log(
+            FAILURES,
+            {
+                "at": datetime.now(UTC).isoformat(),
+                "step": "freshcal check",
+                "exit_code": completed.returncode,
+                "error": completed.stderr[-2000:],
+            },
+        )
         print(f"shadow: freshcal produced no report (exit {completed.returncode})", file=sys.stderr)
         return 1
     state = json.loads(STATE.read_text()) if STATE.exists() else {}
