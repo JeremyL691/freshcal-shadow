@@ -1,0 +1,4 @@
+{
+  "ecb.reference_rates": "ON_TIME",
+  "us_treasury.par_yield_curve": "ON_TIME"
+}
