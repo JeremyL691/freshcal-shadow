@@ -4,7 +4,9 @@ A live shadow run of [FreshCal](https://github.com/JeremyL691/freshcal) on two r
 data sources, to see how its business-calendar-aware freshness verdicts behave outside the
 test suite — and how they compare with a fixed freshness threshold.
 
-Every 15 minutes, GitHub Actions ([`shadow.yml`](.github/workflows/shadow.yml)):
+Every 15 minutes, GitHub Actions ([`shadow.yml`](.github/workflows/shadow.yml); each run
+works through the 15-minute slots for 5.5 hours and then starts the next run, because
+GitHub throttles frequent schedules):
 
 1. **Loads** the ECB's daily euro reference rates and the US Treasury's daily par yield
    curve. A publication date not seen before is appended to [`loads/`](loads) with the
@@ -20,9 +22,10 @@ Every 15 minutes, GitHub Actions ([`shadow.yml`](.github/workflows/shadow.yml)):
 
 `python3 analyze.py` turns the data into a report: publication delays, every FreshCal
 alert, and what a fixed 26-hour threshold (dbt-style `error_after`) would have reported
-over the same timeline. The run started on 2026-09-30 and is planned for about four
-weeks, which includes US Columbus Day (2026-10-12), a bond-market holiday on which the
-stock exchange is open.
+over the same timeline. The run started on 2026-10-01; the comparison is analysed after
+two weeks (about 2026-10-16), which includes US Columbus Day (2026-10-12), a bond-market
+holiday on which the stock exchange is open. The run continues until the ECB collection
+reaches 20 business days (about 2026-10-23) for FreshCal's arrival-time validation.
 
 Data commits are made by `github-actions[bot]`. The data are public: ECB reference rates
 (© European Central Bank) and US Treasury par yield curve rates (U.S. Department of the
