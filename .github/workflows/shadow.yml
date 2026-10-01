@@ -1,6 +1,7 @@
 name: Shadow run
 # Every 15 minutes: load newly published ECB and US Treasury data, record the ECB file's
 # Last-Modified time, run FreshCal from PyPI, and commit only what changed.
+# GitHub runs scheduled workflows on a best-effort basis: runs can start late or be skipped.
 on:
   schedule:
     - cron: "7,22,37,52 * * * *"
