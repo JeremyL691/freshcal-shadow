@@ -1,0 +1,41 @@
+version: 1
+
+# The shadow run's two sources. shadow.py appends a row the first time it sees a new
+# publication date, stamped with the load time in UTC (naive), exactly like a real loader.
+connection:
+  type: duckdb
+  path: ":memory:"
+
+sources:
+  - name: ecb.reference_rates
+    relation: "read_csv('loads/ecb.csv')"
+    loaded_at_field: _loaded_at
+    # The ECB publishes on TARGET business days at around 16:00 CET; its daily file has
+    # been observed from about 15:56 CEST. The release time must not be later than the
+    # earliest time the loader can see the data, so 15:45 with a deadline of 18:00.
+    schedule: {kind: business_days, time: "15:45", timezone: Europe/Berlin}
+    calendar:
+      weekend: [sat, sun]
+      holidays:
+        - financial: XECB          # TARGET closing days
+    grace: 2h15m
+    observed_timezone: UTC
+
+  - name: us_treasury.par_yield_curve
+    relation: "read_csv('loads/treasury.csv')"
+    loaded_at_field: _loaded_at
+    # The Treasury publishes the daily par yield curve on bond-market business days,
+    # normally by about 6 PM Eastern. 15:00 is before any plausible publication time,
+    # and the 4-hour grace window puts the deadline at 19:00 Eastern.
+    schedule: {kind: business_days, time: "15:00", timezone: America/New_York}
+    calendar:
+      weekend: [sat, sun]
+      holidays:
+        # The federal calendar matches the bond market for October-December 2026:
+        # Columbus Day (Oct 12) and Veterans Day (Nov 11) are closures in both, and the
+        # Good Friday difference does not fall in this period (see FreshCal's
+        # docs/validation.md, section A).
+        - country: US
+      valid_until: "2026-12-31"
+    grace: 4h
+    observed_timezone: UTC
