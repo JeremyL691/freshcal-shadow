@@ -1,8 +1,13 @@
 """One shadow-run step: load newly published data, then record FreshCal's verdicts.
 
-1. Load. Fetch the ECB's daily reference rates and the US Treasury's daily par yield
-   curve. A publication date not seen before is appended to ``loads/<source>.csv`` with
-   the current time as ``_loaded_at`` (naive UTC), the way a real loader stamps rows.
+1. Load. Fetch six public daily publications: the ECB's reference rates, the US
+   Treasury's par yield curve, the New York Fed's SOFR, and the exchange rates of the
+   Bank of Canada, the Reserve Bank of Australia and the Czech National Bank. A
+   publication date not seen before is appended to ``loads/<source>.csv`` with the
+   current time as ``_loaded_at`` (naive UTC), the way a real loader stamps rows.
+   The RBA and CNB files are fetched every 15 minutes only on weekdays from shortly
+   before their release until the day's data has arrived, and hourly otherwise (the
+   CNB asks users not to poll excessively; the RBA file is about 140 KB).
 2. Check. Run ``freshcal check --format json`` on ``freshcal.yml`` (the PyPI package).
 3. Record. Append a line to ``results/transitions.jsonl`` whenever a source's status
    changes; ``results/state.json`` holds the last status per source. Unchanged runs write
@@ -20,8 +25,10 @@ import subprocess
 import sys
 import urllib.request
 import xml.etree.ElementTree as ET
-from datetime import UTC, datetime
+from collections.abc import Callable
+from datetime import UTC, datetime, time
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parent
 LOADS = ROOT / "loads"
@@ -36,6 +43,13 @@ TREASURY_URL = (
     "daily-treasury-rates.csv/{year}/all?type=daily_treasury_yield_curve"
     "&field_tdr_date_value={year}&page&_format=csv"
 )
+SOFR_URL = "https://markets.newyorkfed.org/api/rates/secured/sofr/last/1.json"
+BOC_URL = "https://www.bankofcanada.ca/valet/observations/FXUSDCAD/json?recent=1"
+RBA_URL = "https://www.rba.gov.au/statistics/tables/csv/f11.1-data.csv"
+CNB_URL = (
+    "https://www.cnb.cz/en/financial-markets/foreign-exchange-market/"
+    "central-bank-exchange-rate-fixing/central-bank-exchange-rate-fixing/daily.txt"
+)
 USER_AGENT = "freshcal-shadow (+https://github.com/JeremyL691/freshcal-shadow)"
 ECB_NS = {"cube": "http://www.ecb.int/vocabulary/2002-08-01/eurofxref"}
 
@@ -43,10 +57,10 @@ ECB_NS = {"cube": "http://www.ecb.int/vocabulary/2002-08-01/eurofxref"}
 def fetch(url: str) -> str:
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(request, timeout=30) as response:
-        return response.read().decode("utf-8")
+        return response.read().decode("utf-8-sig")
 
 
-def ecb_latest() -> tuple[str, str]:
+def ecb_latest(now: datetime) -> tuple[str, str]:
     """(rate_date, USD rate) of the ECB's latest publication."""
     root = ET.fromstring(fetch(ECB_URL))
     day = root.find(".//cube:Cube[@time]", ECB_NS)
@@ -65,6 +79,84 @@ def treasury_latest(now: datetime) -> tuple[str, str]:
             date = datetime.strptime(latest["Date"], "%m/%d/%Y").date().isoformat()
             return date, latest.get("10 Yr", "")
     raise ValueError("no Treasury curve in this year's or last year's file")
+
+
+def sofr_latest(now: datetime) -> tuple[str, str]:
+    """(effective date, rate) of the latest SOFR; it is published the next business day."""
+    rate = json.loads(fetch(SOFR_URL))["refRates"][0]
+    return rate["effectiveDate"], str(rate["percentRate"])
+
+
+def boc_latest(now: datetime) -> tuple[str, str]:
+    """(date, USD/CAD) of the Bank of Canada's latest daily average exchange rate."""
+    observation = json.loads(fetch(BOC_URL))["observations"][-1]
+    return observation["d"], observation["FXUSDCAD"]["v"]
+
+
+def rba_latest(now: datetime) -> tuple[str, str]:
+    """(date, AUD/USD) of the latest row of the RBA's F11.1 table (the 4 pm Sydney fix)."""
+    rows = []
+    for row in csv.reader(io.StringIO(fetch(RBA_URL))):
+        try:
+            rows.append((datetime.strptime(row[0], "%d-%b-%Y").date(), row[1]))
+        except (IndexError, ValueError):  # title, metadata and blank lines
+            continue
+    if not rows:
+        raise ValueError("no dated row in the RBA F11.1 table")
+    day, usd = max(rows)
+    return day.isoformat(), usd
+
+
+def cnb_latest(now: datetime) -> tuple[str, str]:
+    """(date, USD/CZK) of the Czech National Bank's latest exchange-rate fixing."""
+    lines = fetch(CNB_URL).splitlines()  # "02 Oct 2026 #190", a header, then the rates
+    day = datetime.strptime(lines[0].split("#")[0].strip(), "%d %b %Y").date()
+    usd = next((line.split("|")[4] for line in lines[2:] if line.split("|")[3:4] == ["USD"]), "")
+    return day.isoformat(), usd
+
+
+Window = tuple[time, ZoneInfo]
+
+#: loads file stem -> (loads header, fetch, polling window; None means every slot).
+SOURCES: dict[str, tuple[list[str], Callable[[datetime], tuple[str, str]], Window | None]] = {
+    "ecb": (["rate_date", "usd", "_loaded_at"], ecb_latest, None),
+    "treasury": (["curve_date", "yield_10y", "_loaded_at"], treasury_latest, None),
+    "sofr": (["effective_date", "rate", "_loaded_at"], sofr_latest, None),
+    "boc": (["rate_date", "usd_cad", "_loaded_at"], boc_latest, None),
+    "rba": (
+        ["rate_date", "aud_usd", "_loaded_at"],
+        rba_latest,
+        (time(15, 45), ZoneInfo("Australia/Sydney")),
+    ),
+    "cnb": (
+        ["rate_date", "usd_czk", "_loaded_at"],
+        cnb_latest,
+        (time(14, 0), ZoneInfo("Europe/Prague")),
+    ),
+}
+
+
+def latest_loaded(path: Path, column: str) -> str | None:
+    if not path.exists():
+        return None
+    with path.open(newline="") as handle:
+        return max((row[column] for row in csv.DictReader(handle)), default=None)
+
+
+def due(now: datetime, path: Path, column: str, window: Window | None) -> bool:
+    """Whether a source is fetched in this slot.
+
+    Without a window: every slot. With one: every slot on weekdays from the window's
+    local start time until that day's publication is loaded, and otherwise only in the
+    first slot of each hour, so no publication waits more than an hour to be seen.
+    """
+    if window is None or now.minute < 15:
+        return True
+    start, zone = window
+    local = now.replace(tzinfo=UTC).astimezone(zone)
+    if local.weekday() >= 5 or local.time() < start:
+        return False
+    return latest_loaded(path, column) != local.date().isoformat()
 
 
 def append_if_new(path: Path, header: list[str], date: str, value: str, now: datetime) -> bool:
@@ -88,13 +180,12 @@ def log(path: Path, record: dict[str, object]) -> None:
 
 
 def load(now: datetime) -> None:
-    sources = (
-        ("ecb", ["rate_date", "usd", "_loaded_at"], ecb_latest),
-        ("treasury", ["curve_date", "yield_10y", "_loaded_at"], lambda: treasury_latest(now)),
-    )
-    for name, header, latest in sources:
+    for name, (header, latest, window) in SOURCES.items():
+        path = LOADS / f"{name}.csv"
+        if not due(now, path, header[0], window):
+            continue
         try:
-            date, value = latest()
+            date, value = latest(now)
         except Exception as error:  # a source being down is data, not a crash
             reason = f"{type(error).__name__}: {error}"[:500]
             # Recorded so the analysis can tell "the publisher was late" from "our loader
@@ -102,7 +193,7 @@ def load(now: datetime) -> None:
             log(FAILURES, {"at": now.isoformat() + "Z", "step": f"fetch {name}", "error": reason})
             print(f"shadow: {name} fetch failed: {reason}", file=sys.stderr)
             continue
-        if append_if_new(LOADS / f"{name}.csv", header, date, value, now):
+        if append_if_new(path, header, date, value, now):
             print(f"shadow: loaded {name} {date}")
 
 
