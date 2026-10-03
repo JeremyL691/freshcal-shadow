@@ -1,7 +1,7 @@
 name: Shadow run
-# Every 15 minutes (at :07, :22, :37 and :52): load newly published ECB and US Treasury
-# data, record the ECB file's Last-Modified time, run FreshCal from PyPI, and commit only
-# what changed.
+# Every 15 minutes (at :07, :22, :37 and :52): load newly published data from six public
+# sources, record the ECB file's Last-Modified time, run FreshCal from PyPI, and commit
+# only what changed.
 #
 # GitHub throttles frequent schedules (observed: a 5-minute cron firing every 3-6 hours),
 # so the schedule cannot be the clock. Instead each run works through the 15-minute slots

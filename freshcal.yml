@@ -1,7 +1,14 @@
 version: 1
 
-# The shadow run's two sources. shadow.py appends a row the first time it sees a new
+# The shadow run's six sources. shadow.py appends a row the first time it sees a new
 # publication date, stamped with the load time in UTC (naive), exactly like a real loader.
+#
+# FreshCal only counts a load made after a release, so a release time must not be later
+# than the earliest time the loader can see the data. The four sources added on
+# 2026-10-03 follow one rule, fixed before their first data arrived: the release is the
+# fixing time or a time clearly before the stated publication time, and the deadline
+# (release + grace) is the stated or observed publication time plus about two hours.
+# Their holiday calendars were checked against the publishers' 2024-2025 data.
 connection:
   type: duckdb
   path: ":memory:"
@@ -38,4 +45,71 @@ sources:
         - country: US
       valid_until: "2026-12-31"
     grace: 4h
+    observed_timezone: UTC
+
+  - name: nyfed.sofr
+    relation: "read_csv('loads/sofr.csv')"
+    loaded_at_field: _loaded_at
+    # The New York Fed publishes each business day's SOFR on the next business day "at
+    # approximately 8:00 a.m. ET" (https://www.newyorkfed.org/markets/reference-rates/sofr).
+    # Release 07:00, deadline 10:00. No SOFR in 2025 for Columbus Day (Oct 13) or
+    # Veterans Day (Nov 11): the federal calendar matches for October-December 2026.
+    schedule: {kind: business_days, time: "07:00", timezone: America/New_York}
+    calendar:
+      weekend: [sat, sun]
+      holidays:
+        - country: US
+      valid_until: "2026-12-31"
+    grace: 3h
+    observed_timezone: UTC
+
+  - name: boc.exchange_rates
+    relation: "read_csv('loads/boc.csv')"
+    loaded_at_field: _loaded_at
+    # "The daily average exchange rates are published once each business day by 16:30 ET"
+    # (https://www.bankofcanada.ca/rates/exchange/daily-exchange-rates/). Release 15:00,
+    # deadline 18:30. No rate in 2025 on Sep 30, Oct 13 (Thanksgiving) or Nov 11: the
+    # federal government holidays, not the national public ones (those miss Thanksgiving).
+    schedule: {kind: business_days, time: "15:00", timezone: America/Toronto}
+    calendar:
+      weekend: [sat, sun]
+      holidays:
+        - country: CA
+          categories: [government]
+      valid_until: "2026-12-31"
+    grace: 3h30m
+    observed_timezone: UTC
+
+  - name: rba.exchange_rates
+    relation: "read_csv('loads/rba.csv')"
+    loaded_at_field: _loaded_at
+    # Table F11.1: the AUD/USD rate is the WM/Reuters fix "at 4.00 pm (Sydney)"
+    # (https://www.rba.gov.au/statistics/frequency/definitions-sources.html); no
+    # publication time is stated, and the file was observed updated at 16:43 Sydney on
+    # 2026-10-02. Release 16:00, deadline 18:30. No rows for NSW Labour Day in 2024
+    # (Oct 7) or 2025 (Oct 6).
+    schedule: {kind: business_days, time: "16:00", timezone: Australia/Sydney}
+    calendar:
+      weekend: [sat, sun]
+      holidays:
+        - country: AU
+          subdivision: NSW
+      valid_until: "2026-12-31"
+    grace: 2h30m
+    observed_timezone: UTC
+
+  - name: cnb.exchange_rates
+    relation: "read_csv('loads/cnb.csv')"
+    loaded_at_field: _loaded_at
+    # The CNB updates its fixing "every working day at around 2.30 p.m."
+    # (https://www.cnb.cz/en/faq/Format-of-the-foreign-exchange-market-rates/). Release
+    # 14:15 because of "around", deadline 16:30. No fixing on 2025-10-28 (Independent
+    # Czechoslovak State Day).
+    schedule: {kind: business_days, time: "14:15", timezone: Europe/Prague}
+    calendar:
+      weekend: [sat, sun]
+      holidays:
+        - country: CZ
+      valid_until: "2026-12-31"
+    grace: 2h15m
     observed_timezone: UTC
