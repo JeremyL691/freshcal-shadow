@@ -3,6 +3,6 @@
   "cnb.exchange_rates": "ON_TIME",
   "ecb.reference_rates": "ON_TIME",
   "nyfed.sofr": "ON_TIME",
-  "rba.exchange_rates": "ON_TIME",
+  "rba.exchange_rates": "NOT_DUE",
   "us_treasury.par_yield_curve": "ON_TIME"
 }
