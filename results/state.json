@@ -1,7 +1,7 @@
 {
   "boc.exchange_rates": "ON_TIME",
   "cnb.exchange_rates": "ON_TIME",
-  "ecb.reference_rates": "ON_TIME",
+  "ecb.reference_rates": "NOT_DUE",
   "nyfed.sofr": "ON_TIME",
   "rba.exchange_rates": "ON_TIME",
   "us_treasury.par_yield_curve": "ON_TIME"
