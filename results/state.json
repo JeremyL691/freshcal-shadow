@@ -4,5 +4,5 @@
   "ecb.reference_rates": "ON_TIME",
   "nyfed.sofr": "ON_TIME",
   "rba.exchange_rates": "ON_TIME",
-  "us_treasury.par_yield_curve": "NOT_DUE"
+  "us_treasury.par_yield_curve": "ON_TIME"
 }
