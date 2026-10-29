@@ -1,5 +1,5 @@
 {
-  "boc.exchange_rates": "NOT_DUE",
+  "boc.exchange_rates": "ON_TIME",
   "cnb.exchange_rates": "ON_TIME",
   "ecb.reference_rates": "ON_TIME",
   "nyfed.sofr": "ON_TIME",
