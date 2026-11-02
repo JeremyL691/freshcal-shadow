@@ -66,3 +66,15 @@ one headline value, and load times are stored.
   period extended from two weeks (to about 2026-10-16) to 2026-10-30, so that the run
   covers more calendars, time zones and daylight-saving changes. The ECB and Treasury
   configuration is unchanged; the new sources' periods start when they were added.
+
+## The run has ended
+
+The workflow was disabled on 2026-11-02 at 22:08 UTC, and the last run finished at
+22:22 UTC; nothing has been loaded since. The analysis covers 2026-10-01 (ECB and Treasury)
+or 2026-10-03 (the other four sources) to 2026-10-30 00:00 UTC. FreshCal raised one alert in
+that period, for a real late RBA publication on 2026-10-15, while the fixed 26-hour
+threshold raised 26 alert episodes, 25 of them on weekends and holidays. The full
+results, with every alert classified, are in section C of FreshCal's
+[validation report](https://github.com/JeremyL691/freshcal/blob/main/docs/validation.md),
+and the ECB publication times collected here are in its section B. The data in this
+repository stays as it was when the run ended.
